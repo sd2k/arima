@@ -1,15 +1,15 @@
+use argmin::core::Executor;
+use argmin::solver::linesearch::MoreThuenteLineSearch;
+use argmin::solver::quasinewton::LBFGS;
+use finitediff::FiniteDiff;
 use num::Float;
 
-use std::convert::From;
 use std::cmp::min;
 use std::fmt::Debug;
 use std::ops::{Add, AddAssign, Div};
 use std::result::Result;
 
-use rustimization::lbfgsb_minimizer::Lbfgsb;
-use finitediff::FiniteDiff;
-
-use crate::{ArimaError, acf, util};
+use crate::{acf, util, ArimaError};
 
 /// Calculate residuals given a time series, an intercept, and ARMA parameters
 /// phi and theta. Any differencing and centering should be done before.
@@ -78,6 +78,48 @@ pub fn residuals<T: Float + From<u32> + From<f64> + Copy + Add + AddAssign + Div
     Ok(residuals)
 }
 
+struct CSS {
+    x: Vec<f64>,
+    ar: usize,
+    total_size: usize,
+}
+
+impl CSS {
+    fn eval(&self, coef: &[f64]) -> f64 {
+        assert_eq!(coef.len(), self.total_size);
+
+        let intercept = coef[0];
+        let phi = &coef[1..self.ar + 1];
+        let theta = &coef[self.ar + 1..];
+
+        let residuals = residuals(&self.x, intercept, Some(&phi), Some(&theta)).unwrap();
+
+        let mut css: f64 = 0.0;
+        for i in 0..residuals.len() {
+            css += residuals[i] * residuals[i];
+        }
+        css
+    }
+}
+
+impl argmin::core::CostFunction for CSS {
+    type Param = Vec<f64>;
+    type Output = f64;
+
+    fn cost(&self, coef: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
+        Ok(self.eval(coef))
+    }
+}
+
+impl argmin::core::Gradient for CSS {
+    type Param = Vec<f64>;
+    type Gradient = Vec<f64>;
+
+    fn gradient(&self, p: &Self::Param) -> Result<Self::Gradient, argmin::core::Error> {
+        Ok(p.forward_diff(&|x| self.eval(x)))
+    }
+}
+
 /// Fit an ARIMA model. Returns the fitted coefficients.
 /// This method uses the L-BFGS algorithm and the conditional sum of squares (CSS)
 /// as the objective function.
@@ -122,30 +164,9 @@ pub fn fit<T: Float + From<u32> + From<f64> + Into<f64> + Copy + Add + AddAssign
 
     let total_size = 1 + ar + ma;
 
-    // The objective is to minimize the conditional sum of squares (CSS),
-    // i.e. the sum of the squared residuals
-    let f = |coef: &Vec<f64>| {
-        assert_eq!(coef.len(), total_size);
-
-        let intercept = coef[0];
-        let phi = &coef[1..ar+1];
-        let theta = &coef[ar+1..];
-
-        let residuals = residuals(&x, intercept, Some(&phi), Some(&theta)).unwrap();
-
-        let mut css: f64 = 0.0;
-        for i in 0..residuals.len() {
-            css += residuals[i] * residuals[i];
-        }
-        css
-    };
-    let g = |coef: &Vec<f64>| {
-        coef.forward_diff(&f)
-    };
-
     // Initial coefficients
     // Todo: These initial guesses are rather arbitrary.
-    let mut coef: Vec<f64> = Vec::new();
+    let mut coef: Vec<f64> = Vec::with_capacity(1 + ar + ma);
 
     // Initial guess for the intercept: First value of x
     coef.push(util::mean(&x));
@@ -165,16 +186,24 @@ pub fn fit<T: Float + From<u32> + From<f64> + Into<f64> + Copy + Add + AddAssign
         }
     }
 
-    let mut fmin = Lbfgsb::new(&mut coef, &f, &g);
+    // Define cost function
+    let cost = CSS { x, ar, total_size };
 
-    // For debugging
-    // fmin.set_verbosity(101);
-    fmin.set_verbosity(-1);
-    fmin.max_iteration(100);
+    // set up a line search (???)
+    let linesearch = MoreThuenteLineSearch::new()
+        .with_c(1e-4, 0.9)
+        .map_err(|_| ArimaError)?;
 
-    let result = fmin.minimize();
+    // Set up solver
+    let solver = LBFGS::new(linesearch, 7);
 
-    Ok(coef)
+    // Run solver
+    let result = Executor::new(cost, solver)
+        .configure(|state| state.param(coef).max_iters(100))
+        .run()
+        .map_err(|_| ArimaError)?;
+
+    result.state.best_param.ok_or(ArimaError)
 }
 
 /// TODO clean up

@@ -27,8 +27,9 @@ netlib = ["lapack", "lapack-sys", "netlib-src"]
 more-asserts = "0.2.1"
 num = "0.2.0"
 rand = "0.7.3"
-finitediff = "0.1.2"
-rustimization = { git = "https://github.com/frnsys/rustimization" }
+finitediff = "0.1.4"
+argmin = { version = "0.8.1", default-features = false }
+argmin-math = { version = "0.3.0", features = ["vec"] }
 
 [dependencies.lapack]
 version = "0.16.0"
