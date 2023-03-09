@@ -43,15 +43,15 @@ pub fn residuals<T: Float + From<u32> + From<f64> + Copy + Add + AddAssign + Div
     x: &[T],
     intercept: T,
     phi: Option<&[T]>,
-    theta: Option<&[T]>
-) -> Result<Vec<T>, ArimaError>{
+    theta: Option<&[T]>,
+) -> Result<Vec<T>, ArimaError> {
     let phi = match phi {
         Some(phi) => phi,
-        None => &[]
+        None => &[],
     };
     let theta = match theta {
         Some(theta) => theta,
-        None => &[]
+        None => &[],
     };
 
     if x.len() < phi.len() || x.len() < theta.len() {
@@ -67,12 +67,12 @@ pub fn residuals<T: Float + From<u32> + From<f64> + Copy + Add + AddAssign + Div
     for t in phi.len()..x.len() {
         let mut xt: T = intercept;
         for j in 0..phi.len() {
-            xt += phi[j] * x[t-j-1];
+            xt += phi[j] * x[t - j - 1];
         }
         for j in 0..min(theta.len(), t) {
-            xt += theta[j] * residuals[t-j-1];
+            xt += theta[j] * residuals[t - j - 1];
         }
-        residuals.push(x[t]-xt);
+        residuals.push(x[t] - xt);
     }
 
     Ok(residuals)
@@ -106,8 +106,8 @@ pub fn fit<T: Float + From<u32> + From<f64> + Into<f64> + Copy + Add + AddAssign
     x: &[T],
     ar: usize,
     d: usize,
-    ma: usize
-) -> Result<Vec<f64>, ArimaError>{
+    ma: usize,
+) -> Result<Vec<f64>, ArimaError> {
     // Convert into f64 as the optimizer functions only support f64
     let mut x64: Vec<f64> = Vec::new();
     for i in 0..x.len() {
@@ -189,10 +189,12 @@ pub fn fit<T: Float + From<u32> + From<f64> + Into<f64> + Copy + Add + AddAssign
 /// # Returns
 ///
 /// * ARIMA coefficients minimizing the conditional sum of squares (CSS).
-pub fn autofit<T: Float + From<u32> + From<f64> + Into<f64> + Copy + Add + AddAssign + Div + Debug>(
+pub fn autofit<
+    T: Float + From<u32> + From<f64> + Into<f64> + Copy + Add + AddAssign + Div + Debug,
+>(
     x: &[T],
     d: usize,
-) -> Result<Vec<f64>, ArimaError>{
+) -> Result<Vec<f64>, ArimaError> {
     let x: Vec<f64> = x.iter().map(|v| (*v).into()).collect();
     let n = x.len() as f64;
     let n_lags = 12;
@@ -205,37 +207,58 @@ pub fn autofit<T: Float + From<u32> + From<f64> + Into<f64> + Copy + Add + AddAs
     // Estimate MA order
     // <https://www.statsmodels.org/devel/_modules/statsmodels/tsa/stattools.html#acf>
     let _acf = acf::acf(&x, Some(n_lags), false).unwrap();
-    let mult: Vec<f64> = _acf[1.._acf.len()-1].iter().scan(0., |acc, v| {
-        *acc += v.powf(2.);
-        Some(1. + 2. * *acc)
-    }).collect();
-    let mut varacf = vec![0., 1./n];
-    let varacf_end: Vec<f64> = (0.._acf.len()-2).map(|i| {
-        1./n * mult[i]
-    }).collect();
+    let mult: Vec<f64> = _acf[1.._acf.len() - 1]
+        .iter()
+        .scan(0., |acc, v| {
+            *acc += v.powf(2.);
+            Some(1. + 2. * *acc)
+        })
+        .collect();
+    let mut varacf = vec![0., 1. / n];
+    let varacf_end: Vec<f64> = (0.._acf.len() - 2).map(|i| 1. / n * mult[i]).collect();
     varacf.extend(varacf_end);
 
     let interval: Vec<f64> = varacf.iter().map(|v| ppf * v.sqrt()).collect();
-    let confint: Vec<(f64, f64)> = _acf.iter().zip(&interval).map(|(p, q)| (p - q, p + q)).collect();
-    let bounds: Vec<(f64, f64)> = confint.iter().zip(&_acf).map(|((l, u), a)| {
-        (l - a, u - a)
-    }).collect();
+    let confint: Vec<(f64, f64)> = _acf
+        .iter()
+        .zip(&interval)
+        .map(|(p, q)| (p - q, p + q))
+        .collect();
+    let bounds: Vec<(f64, f64)> = confint
+        .iter()
+        .zip(&_acf)
+        .map(|((l, u), a)| (l - a, u - a))
+        .collect();
 
     // Subtract one to compensate for the first value (lag=0)
-    let ma_order = _acf.iter().zip(bounds).take_while(|(a, (l, u))| a < &l || a > &u).count() - 1;
+    let ma_order = _acf
+        .iter()
+        .zip(bounds)
+        .take_while(|(a, (l, u))| a < &l || a > &u)
+        .count()
+        - 1;
 
     // <https://www.statsmodels.org/devel/_modules/statsmodels/tsa/stattools.html#pacf>
     let _pacf = acf::pacf(&x, Some(n_lags)).unwrap();
     let pacf_varacf = 1.0 / n;
     let pacf_interval = ppf * pacf_varacf.sqrt();
-    let pacf_confint: Vec<(f64, f64)> = _pacf.iter().map(|p| (p - pacf_interval, p + pacf_interval)).collect();
+    let pacf_confint: Vec<(f64, f64)> = _pacf
+        .iter()
+        .map(|p| (p - pacf_interval, p + pacf_interval))
+        .collect();
 
-    let pacf_bounds: Vec<(f64, f64)> = pacf_confint.iter().zip(&_pacf).map(|((l, u), a)| {
-        (l - a, u - a)
-    }).collect();
+    let pacf_bounds: Vec<(f64, f64)> = pacf_confint
+        .iter()
+        .zip(&_pacf)
+        .map(|((l, u), a)| (l - a, u - a))
+        .collect();
 
     // lag=0 isn't included so no need to subtract one
-    let ar_order = _pacf.iter().zip(pacf_bounds).take_while(|(a, (l, u))| a < &l || a > &u).count();
+    let ar_order = _pacf
+        .iter()
+        .zip(pacf_bounds)
+        .take_while(|(a, (l, u))| a < &l || a > &u)
+        .count();
 
     fit(&x, ar_order, d, ma_order)
 }
