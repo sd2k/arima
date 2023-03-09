@@ -53,3 +53,11 @@ optional = true
 [dependencies.openblas-src]
 version = "0.7"
 optional = true
+
+[dev-dependencies]
+criterion = "0.4.0"
+pprof = { version = "0.11.1", features = ["criterion", "frame-pointer", "prost-codec"] }
+
+[[bench]]
+name = "fit"
+harness = false
