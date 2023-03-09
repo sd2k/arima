@@ -217,8 +217,13 @@ pub fn ar_dl_rho_cov<T: Float + From<u32> + From<f64> + Copy + Add + AddAssign +
     let one = From::from(1.0);
 
     // these vectors will hold the parameter values
-    let mut phi: Vec<Vec<T>> = vec![Vec::new(); order+1];
-    let mut var: Vec<T> = Vec::new();
+    let mut phi: Vec<Vec<T>> = (0..order + 1)
+        // Use map/collect to get vecs with the desired capacity.
+        // The vec![Vec::with_capacity(...); ...] macro uses clone on the inner vec
+        // which doesn't maintain the capacity.
+        .map(|_| Vec::with_capacity(order + 1))
+        .collect();
+    let mut var: Vec<T> = Vec::with_capacity(order + 1);
 
     // initialize zero-order estimates
     phi[0].push(zero);
@@ -252,8 +257,7 @@ pub fn ar_dl_rho_cov<T: Float + From<u32> + From<f64> + Copy + Add + AddAssign +
             phi[i][k - 1] = phi[i - 1][k - 1] - phi[i][i - 1] * phi[i - 1][i - k - 1];
         }
     }
-
-    Ok((phi[order].clone(), var[order].clone()))
+    Ok((phi.remove(order), var.remove(order)))
 }
 
 /// Estimate the variance of a time series of length n via Durbin-Levinson.
@@ -286,7 +290,7 @@ pub fn var<T: Float + From<u32> + From<f64> + Into<f64> + Copy + Add + AddAssign
         None => None,
     };
     let rho = acf(&x, max_lag, false)?;
-    let cov0 = acf(&x, Some(0), true)?[0].clone();
+    let cov0 = acf(&x, Some(0), true)?[0];
     let (_phi, var) = ar_dl_rho_cov(&rho, cov0, order).unwrap();
 
     Ok(var)
@@ -397,7 +401,7 @@ pub fn pacf_rho_cov0<T: Float + From<u32> + From<f64> + Into<f64> + Copy + AddAs
     let m = max_lag + 1;
 
     // build output vector
-    let mut y: Vec<T> = Vec::new();
+    let mut y: Vec<T> = Vec::with_capacity(m - 1);
 
     // calculate AR coefficients for each solution of order 1..max_lag
     for i in 1..m {

@@ -60,7 +60,7 @@ pub fn residuals<T: Float + From<u32> + From<f64> + Copy + Add + AddAssign + Div
 
     let zero: T = From::from(0.0);
 
-    let mut residuals: Vec<T> = Vec::new();
+    let mut residuals: Vec<T> = Vec::with_capacity(x.len());
     for _ in 0..phi.len() {
         residuals.push(zero);
     }
